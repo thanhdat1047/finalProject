@@ -1,0 +1,9 @@
+# created by virtualenv automatically
+Lib
+etc
+include
+share
+Scripts
+./src/__pycache__
+volumes
+.env

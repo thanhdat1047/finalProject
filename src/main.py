@@ -127,8 +127,8 @@ def handle_user_input(msgs, agent_executor):
     """
     if prompt := st.chat_input("Hãy hỏi tôi bất cứ điều gì về luật giao thông đường bộ"):
         # Luu va hien thi tin nhan nguoi dung
-        st.session_state.messages.append({"role": "human", "content": prompt})
-        st.chat_message("human").write(prompt)
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        st.chat_message("user").write(prompt)
         msgs.add_user_message(prompt)
 
         # Xu ly va hien thi cau tra loi 

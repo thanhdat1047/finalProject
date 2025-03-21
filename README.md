@@ -14,7 +14,7 @@
 
 ## 4. Run 
   # Crawl data
-  python craw.py
+  python crawl.py
 
   # Seed data
   python seed_data.py

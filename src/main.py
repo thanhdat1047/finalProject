@@ -45,7 +45,7 @@ def setup_sidebar():
 
         # Phan 1: Emmbedding model
         st.header("🔤 Embeddings Model")
-        st.write("GPT") 
+        st.write("GEMINI") 
         # use_openAI_embeddings = ("GPT") 
 
         # Phan 2: Cau hinh Data
@@ -58,13 +58,13 @@ def setup_sidebar():
         st.header("🔍 Collection để truy vấn")
         collection_to_query = st.text_input(
             "Nhap ten collection",
-            "data_test",
+            "legal_data",
             help="Nhap ten collection su dung de tim kiem thong tin"
         )
 
         # Phan 3: Chon Model de tra loi
         st.header("🤖 Model AI")
-        model_choice = "OpenAI GPT-4"
+        model_choice = "GEMINI 1.5 FLASH"
         st.write(model_choice)
 
         return model_choice, collection_to_query
@@ -72,7 +72,7 @@ def setup_sidebar():
 def handle_local_file():
     collection_name = st.text_input(
         "Ten collection:",
-        "data_test",
+        "legal_data",
         help="Nhap ten collection muon luu vao Milvus"
     )
     filename = st.text_input("Ten file JSON:", "stack.json")
@@ -100,7 +100,7 @@ def handle_local_file():
 def setup_chat_interface():
     st.title("💬 AI Assistant")
 
-    st.caption("🚀 Trợ lý AI được hỗ trợ bởi LangChain và OpenAI GPT-4")
+    st.caption("🚀 Các câu trả lời chỉ nhằm mục đích tham khảo và trợ lý AI không đại diện cho pháp luật Việt Nam")
 
     msgs = StreamlitChatMessageHistory(key="langchain_messages")
 

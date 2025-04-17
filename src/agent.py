@@ -13,6 +13,9 @@ from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
 from langchain.tools.render import render_text_description
 from dotenv import load_dotenv
+from langchain_core.tools import StructuredTool
+from langchain.agents.output_parsers import ReActSingleInputOutputParser
+from pydantic import BaseModel
 import streamlit as st
 
 load_dotenv()
@@ -21,7 +24,11 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 if not GOOGLE_API_KEY:
     raise ValueError("GOOGLE_API_KEY not found in environment variables")
 
-def get_retriever(collection_name: str = "data_test") -> EnsembleRetriever:  # Đổi tên collection cho phù hợp
+
+class SearchInput(BaseModel):
+    query: str
+
+def get_retriever(collection_name: str = "legal_data") -> EnsembleRetriever:  # Đổi tên collection cho phù hợp
     """
     Tạo một ensemble retriever kết hợp vector search (Milvus) và BM25
     Args:
@@ -29,7 +36,7 @@ def get_retriever(collection_name: str = "data_test") -> EnsembleRetriever:  # �
     """
     try:
         # Connect to Milvus
-        from seed_data import connect_to_milvus  # Import ở đây để tránh lỗi nếu không seed data
+        from seed import connect_to_milvus  # Import ở đây để tránh lỗi nếu không seed data
         vectorstore = connect_to_milvus('http://localhost:19530',
                                         collection_name)
         milvus_retriever = vectorstore.as_retriever(
@@ -68,20 +75,37 @@ def get_retriever(collection_name: str = "data_test") -> EnsembleRetriever:  # �
         return BM25Retriever.from_documents(default_doc)
 
 # Tao cong cu tim kiem cho agent
-def create_search_tool(retriever):
-    def search_tool(query: str):
-        """Tìm kiếm thông tin từ retriever."""
-        return retriever.get_relevant_documents(query)
+#"""Tìm kiếm thông tin từ retriever"""
 
-    return Tool(
+def create_search_tool(retriever):
+    def search_tool(query: str)-> str:
+        try:
+            # Làm sạch query
+            clean_query = " ".join(query.split()[:10])
+            
+            docs = retriever.invoke(clean_query,  config={"k": 5})
+            if not docs:
+                return "Không tìm thấy dữ liệu phù hợp"
+                
+            return "\n\n".join([f"[Doc {i+1}]: {d.page_content}" for i, d in enumerate(docs)])
+        except Exception as e:
+            return f"Lỗi hệ thống: {str(e)}"
+
+    return StructuredTool(
         name="find_luat_giao_thong",
         func=search_tool,
-        description="Tìm kiếm thông tin liên quan đến luật giao thông Việt Nam. Sử dụng công cụ này để tra cứu các điều luật, quy định, mức phạt và các thông tin pháp lý khác về giao thông."
+        description="Tra cứu luật giao thông. Dùng khi cần thông tin về: phạt, điều luật, nghị định",
+        args_schema=SearchInput
     )
 
 retriever = get_retriever()
 search_tool = create_search_tool(retriever)
-tools = [search_tool]
+
+def format_scratchpad(steps):
+    return "\n".join([
+        f"Thought: {action.log}\nObservation: {observation}"
+        for action, observation in steps
+    ])
 
 def get_llm_and_agent(_retriever, model_choice="gemini") -> AgentExecutor:
     """
@@ -97,68 +121,68 @@ def get_llm_and_agent(_retriever, model_choice="gemini") -> AgentExecutor:
         api_key=GOOGLE_API_KEY
     )
 
-    tools = [create_search_tool(_retriever)]
-
-    system = """Bạn là một chuyên gia tư vấn về luật giao thông Việt Nam. Bạn có kiến thức sâu rộng về các quy định, điều luật, và mức phạt liên quan đến giao thông. Hãy sử dụng công cụ 'find_luat_giao_thong' để tra cứu thông tin cần thiết và trả lời câu hỏi của người dùng một cách chính xác và đầy đủ. Nếu không tìm thấy thông tin, hãy nói rõ là bạn không thể trả lời câu hỏi."""  # Mô tả rõ ràng vai trò và cách sử dụng tool
-
-    # prompt = ChatPromptTemplate.from_messages([
-    #     ("system", system),
-    #     MessagesPlaceholder(variable_name="chat_history"),
-    #     ("user", "{input}"),
-    #     ("assistant", "{agent_scratchpad}"),
-    # ])
-
-    prompt = PromptTemplate(
-        system = system,
-        template=
-        """
-        {system}
-
-        {chat_history}
-
-        Question: {input}
-
-        {agent_scratchpad}
-        """
+    general_tool = Tool.from_function(
+        name="general_questions",
+        func=lambda q: "Tôi chỉ trả lời về luật giao thông Việt Nam",
+        description="Dùng cho các câu hỏi không liên quan đến luật giao thông"
     )
+
+    tools = [
+        general_tool,
+        create_search_tool(_retriever)
+    ]
+
+    system_template = """You MUST always respond in the following format:
+    **Thought**: [Analyze the question and plan how to answer]
+    **Action**: [Tool name if needed, e.g., find_luat_giao_thong]
+    **Action Input**: [Input for the tool]
+    **Observation**: [Result from the tool]
+    **Final Answer**: [Final response in Vietnamese]
+
+    Rules:
+    1. For traffic law-related questions, use find_luat_giao_thong
+    2. If tool results are UNRELATED to the question, immediately stop and respond: 'Không tìm thấy quy định' (No regulations found)
+    3. Only use tools when legal information is needed. MAX 3 tool calls
+    4. For non-traffic law questions, use general_questions
+    5. Synthesize information from multiple results instead of verbatim responses
+    6. If results exceed 1000 characters, request user to provide more details
+    7. FINAL ANSWER MUST BE IN VIETNAMESE
+
+    Important Notes:
+    - Maintain professional tone for legal responses
+    - Cross-check information between different documents
+    - If conflicting information is found, state: 'Có sự khác biệt trong quy định. Vui lòng tham khảo Nghị định số...' 
+    - Always conclude with **Final Answer** in Vietnamese"""
     
-    system_template = """Bạn là một AI về lĩnh vực luật giao thông, bạn chuyên tư vấn về luật giao thông Việt Nam.Không trả lời các câu hỏi thuộc lĩnh vực khác luật giao thông .Bạn có kiến thức sâu rộng về các quy định, điều luật, và mức phạt liên quan đến giao thông. Hãy sử dụng công cụ 'find_luat_giao_thong' để tra cứu thông tin cần thiết và trả lời câu hỏi của người dùng một cách chính xác và đầy đủ. Nếu không tìm thấy thông tin, hãy nói rõ là bạn không thể trả lời câu hỏi."""
-    system_message_prompt = SystemMessagePromptTemplate.from_template(system_template)
 
-    human_template = "{input}"
-    human_message_prompt = HumanMessagePromptTemplate.from_template(human_template)
-
-    ai_template = "{agent_scratchpad}"
-    ai_message_prompt = AIMessagePromptTemplate.from_template(ai_template)
-
-    chat_prompt = ChatPromptTemplate.from_messages([
-        system_message_prompt,
-        MessagesPlaceholder(variable_name="chat_history"),
-        human_message_prompt,
-        ai_message_prompt
+    prompt = ChatPromptTemplate.from_messages([
+        SystemMessagePromptTemplate.from_template(system_template),
+        MessagesPlaceholder("chat_history", optional=True),
+        HumanMessagePromptTemplate.from_template("{input}"),
+        MessagesPlaceholder("agent_scratchpad")
     ])
 
-
-    # Initialize memory
-    # memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
-
-    #Sử dụng create_react_agent thay vì initialize_agent
+    # initialize_agent
     agent = initialize_agent(
         llm=llm,
         tools=tools,
-        prompt=chat_prompt,
+        prompt=prompt,
         agent=AgentType.CHAT_ZERO_SHOT_REACT_DESCRIPTION,
-        verbose=True
+        verbose=True,
+
+        memory=ConversationBufferMemory(
+            memory_key="chat_history",
+            return_messages=True),
+
+        output_parser=ReActSingleInputOutputParser(),
+
+        handle_parsing_errors=lambda _: "Lỗi định dạng! Vui lòng trả lời ngắn gọn." ,
+        format_scratchpad=format_scratchpad,
+
+        max_iterations=3,  # Giới hạn số lần gọi tool
+        early_stopping_method="generate" 
     )
 
     return agent
-    # agent = initialize_agent(
-    #     llm=llm, tools=tools, prompt=prompt
-    # )
 
-    # return AgentExecutor(agent=agent, tools=tools, verbose=True)
-
-
-# # Khoi tao retrieve and agent
-# retriever = get_retriever()
 agent_executor = get_llm_and_agent(retriever)

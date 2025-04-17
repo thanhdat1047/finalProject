@@ -41,4 +41,8 @@ PyYAML>=6.0.2
 langchain-google-genai>=2.1.0
 langchain-google-vertexai>=2.0.15
 langchain-huggingface<= 0.1.2
+vncorenlp<=1.0.3
+langchain-experimental<=0.3.4
+sentence-transformers<=3.4.1
 
+astrapy>=2.0,<3.0

@@ -1,4 +1,4 @@
-# created by virtualenv automatically
+/src/metadata/metadata_with_embeddings.json
 Lib
 etc
 include
@@ -8,3 +8,4 @@ __pycache__
 volumes
 .env
 src/__pycache__/
+/src/venv

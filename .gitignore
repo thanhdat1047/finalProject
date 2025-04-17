@@ -4,6 +4,7 @@ etc
 include
 share
 Scripts
-./src/__pycache__
+__pycache__
 volumes
 .env
+src/__pycache__/

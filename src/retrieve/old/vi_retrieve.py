@@ -10,6 +10,23 @@ def mean_pooling(model_output, attention_mask):
     input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
     return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
 
+
+def embedding_query(query: str, tokenizer, model ):
+    max_length = 256
+    
+    # Encode query
+    encoded_query = tokenizer([query], padding=True, truncation=True, return_tensors='pt', max_length=max_length)
+        
+    with torch.no_grad():
+        query_model_output = model(**encoded_query)
+    
+    # Tính embedding cho query
+    query_embedding = mean_pooling(query_model_output, encoded_query['attention_mask']).numpy()
+    
+    return query_embedding
+    
+    
+
 def search_similar_contexts(query, data_with_embeddings, tokenizer, model, top_k=5):
     """
     Tìm kiếm các context tương tự nhất với câu query
